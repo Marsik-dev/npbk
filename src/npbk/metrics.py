@@ -107,3 +107,42 @@ def evaluate(
         hamming_hist_own=own_dists,
         hamming_hist_other=other_dists,
     )
+
+
+def make_layer_report(
+    layer_num: int,
+    own_codes: np.ndarray,    # (N_own, K) binary — selected neurons only
+    other_codes: np.ndarray,  # (N_other, K) binary
+    n_total: int,             # neurons before stability filter
+    stability_own: np.ndarray,   # (K,)
+    stability_other: np.ndarray, # (K,)
+) -> "LayerReport":  # type: ignore[name-defined]
+    """Build a LayerReport with both predicted and empirical FAR/FRR."""
+    from .types import LayerReport
+
+    K = own_codes.shape[1]
+    threshold = optimal_hamming_threshold(stability_own)
+
+    # Reference code = majority vote over Own
+    ref = (own_codes.mean(axis=0) >= 0.5).astype(np.int8)
+
+    # Empirical FAR / FRR
+    own_dists   = (own_codes   != ref).sum(axis=1)
+    other_dists = (other_codes != ref).sum(axis=1)
+    emp_frr = float((own_dists   >  threshold).mean())
+    emp_far = float((other_dists <= threshold).mean())
+
+    return LayerReport(
+        layer_num=layer_num,
+        n_neurons_total=n_total,
+        n_neurons_selected=K,
+        stability_own=stability_own,
+        stability_other=stability_other,
+        mean_stability_own=float(stability_own.mean()) if K else 0.0,
+        mean_stability_other=float(stability_other.mean()) if K else 0.0,
+        predicted_far=predict_far(stability_own, n_bits=K),
+        predicted_frr=predict_frr(stability_own, threshold),
+        empirical_far=emp_far,
+        empirical_frr=emp_frr,
+        hamming_threshold=threshold,
+    )

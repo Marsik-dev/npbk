@@ -14,7 +14,7 @@ from .constants import (
 )
 from .layer1 import Layer1
 from .layer2 import Layer2
-from .metrics import optimal_hamming_threshold, predict_far, predict_frr
+from .metrics import make_layer_report, optimal_hamming_threshold, predict_far, predict_frr
 from .types import QualityReport, TrainingResult, TrainingSet
 from .utils import binary_forward, bit_stability
 
@@ -67,6 +67,18 @@ class NPBKTrainer:
         own_codes_sel = own_codes_l1[:, w1.selected]
         other_codes_sel = other_codes_l1[:, w1.selected]
 
+        # Layer 1 report (before correction)
+        l1_stability_own = bit_stability(own_codes_sel)
+        l1_stability_other = bit_stability(other_codes_sel)
+        layer1_report = make_layer_report(
+            layer_num=1,
+            own_codes=own_codes_sel,
+            other_codes=other_codes_sel,
+            n_total=own_codes_l1.shape[1],
+            stability_own=l1_stability_own,
+            stability_other=l1_stability_other,
+        )
+
         # --- Layer 2 ---
         l2 = Layer2()
         w2 = l2.fit(own_codes_sel, other_codes_sel)
@@ -116,6 +128,16 @@ class NPBKTrainer:
 
         passed = len(warnings) == 0 and len(reference_code) >= 8
 
+        # Layer 2 report (after correction)
+        layer2_report = make_layer_report(
+            layer_num=2,
+            own_codes=own_final,
+            other_codes=other_final,
+            n_total=own_codes_l2.shape[1],
+            stability_own=stability_own,
+            stability_other=stability_other,
+        )
+
         return TrainingResult(
             layer1=w1,
             layer2=w2,
@@ -125,4 +147,6 @@ class NPBKTrainer:
             hamming_threshold=hamming_threshold,
             quality=quality,
             passed=passed,
+            layer1_report=layer1_report,
+            layer2_report=layer2_report,
         )

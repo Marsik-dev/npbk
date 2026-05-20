@@ -52,15 +52,35 @@ class QualityReport:
 
 
 @dataclass
+class LayerReport:
+    """FAR/FRR + stability metrics after a single training layer."""
+    layer_num: int               # 1 or 2
+    n_neurons_total: int         # before selection filter
+    n_neurons_selected: int      # after stability filter
+    stability_own: np.ndarray    # (K,) ω_i on Own
+    stability_other: np.ndarray  # (K,) ω_i on Other
+    mean_stability_own: float
+    mean_stability_other: float
+    predicted_far: float
+    predicted_frr: float
+    empirical_far: float         # actual FAR on training Other set
+    empirical_frr: float         # actual FRR on training Own set
+    hamming_threshold: int
+
+
+@dataclass
 class TrainingResult:
     layer1: Layer1Weights
     layer2: Layer2Weights
-    stability_own: np.ndarray   # (K,) ω_i for each Layer 1 neuron on Own set
-    stability_other: np.ndarray # (K,) ω_i on Other set
-    reference_code: np.ndarray  # (K_selected,) binary reference code from mean Own
+    stability_own: np.ndarray   # (K,) ω_i for final selected neurons on Own
+    stability_other: np.ndarray # (K,) ω_i on Other
+    reference_code: np.ndarray  # binary reference code from mean Own
     hamming_threshold: int
     quality: QualityReport
     passed: bool
+    # Per-layer diagnostics (new)
+    layer1_report: "LayerReport | None" = None
+    layer2_report: "LayerReport | None" = None
 
 
 @dataclass
