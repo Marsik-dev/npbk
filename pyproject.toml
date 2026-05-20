@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "npbk"
+version = "0.1.0"
+description = "Neural Network Biometry-Code Converter (GOST R 52633.5-2011)"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "msgpack>=1.0",
+    "cryptography>=41.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.1",
+    "mypy>=1.6",
+    "hypothesis>=6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/npbk"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
