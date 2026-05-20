@@ -14,7 +14,7 @@ from .constants import (
 )
 from .layer1 import Layer1
 from .layer2 import Layer2
-from .metrics import make_layer_report, optimal_hamming_threshold, predict_far, predict_frr
+from .metrics import make_layer_report, optimal_hamming_threshold
 from .types import QualityReport, TrainingResult, TrainingSet
 from .utils import binary_forward, bit_stability
 
@@ -108,9 +108,21 @@ class NPBKTrainer:
         stability_other = bit_stability(other_final)
 
         pass_rate = float((stability_own >= self.config.min_stability).mean())
-        hamming_threshold = optimal_hamming_threshold(
-            stability_own, target_far=self.config.target_far
-        )
+
+        # Empirical threshold from own training distances — 5-sigma covers 99.99997% of own.
+        # Analytical formula assumes Other is random (Binomial), but real faces are correlated,
+        # causing the analytical threshold to land inside the Other distribution → high FAR.
+        K = len(reference_code)
+        if K > 0:
+            own_train_dists = (own_final != reference_code).sum(axis=1).astype(np.float64)
+            d_mean = float(own_train_dists.mean())
+            d_std = float(own_train_dists.std()) + 1.0  # +1 avoids zero std edge case
+            hamming_threshold = int(d_mean + 5.0 * d_std)
+            hamming_threshold = min(hamming_threshold, K)  # can't exceed code length
+        else:
+            hamming_threshold = optimal_hamming_threshold(
+                stability_own, target_far=self.config.target_far
+            )
 
         warnings: list[str] = []
         if pass_rate < MIN_NEURON_PASS_RATE:
@@ -121,12 +133,22 @@ class NPBKTrainer:
         if len(reference_code) < 8:
             warnings.append(f"Final code length {len(reference_code)} is very short")
 
+        # Empirical FAR/FRR on training data
+        if K > 0:
+            own_dists_final = (own_final != reference_code).sum(axis=1)
+            other_dists_final = (other_final != reference_code).sum(axis=1)
+            empirical_frr = float((own_dists_final > hamming_threshold).mean())
+            empirical_far = float((other_dists_final <= hamming_threshold).mean())
+        else:
+            empirical_frr = 1.0
+            empirical_far = 1.0
+
         quality = QualityReport(
             mean_stability=float(stability_own.mean()),
             min_stability=float(stability_own.min()) if len(stability_own) else 0.0,
             neuron_pass_rate=pass_rate,
-            predicted_far=predict_far(stability_own),
-            predicted_frr=predict_frr(stability_own, hamming_threshold),
+            predicted_far=empirical_far,
+            predicted_frr=empirical_frr,
             n_own_samples=len(own),
             n_other_samples=len(other),
             warnings=warnings,
