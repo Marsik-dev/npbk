@@ -23,6 +23,9 @@ from .utils import binary_forward, bit_stability
 class TrainerConfig:
     min_stability: float = MIN_STABILITY_INDEX
     target_far: float = TARGET_FAR
+    # "discrimination" confirmed best by experiments on RAVDESS
+    selection: str = "discrimination"
+    disc_threshold: float = 0.25
 
 
 class NPBKTrainer:
@@ -54,7 +57,10 @@ class NPBKTrainer:
         other = ts.other_vectors.astype(np.float64)
 
         # --- Layer 1 ---
-        l1 = Layer1()
+        l1 = Layer1(
+            selection=self.config.selection,       # type: ignore[arg-type]
+            disc_threshold=self.config.disc_threshold,
+        )
         w1 = l1.fit(own, other)
 
         own_codes_l1 = binary_forward(own, w1.mu, w1.signs, w1.thresholds)
