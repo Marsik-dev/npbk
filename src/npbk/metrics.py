@@ -71,6 +71,33 @@ def optimal_hamming_threshold(
     return max(0, threshold)
 
 
+def robust_hamming_threshold(
+    own_final: np.ndarray,       # (N_own, K) binary
+    reference_code: np.ndarray,  # (K,) binary
+    other_holdout_final: np.ndarray | None = None,  # (N_holdout, K) binary
+) -> int:
+    """
+    Compute Hamming threshold as min(5σ_own, 1%-percentile of other holdout - 1).
+    The own-based bound covers ~all genuine users (FRR≈0).
+    The other-based bound ensures empirical FAR ≤ 1% when holdout is available.
+    """
+    K = len(reference_code)
+    if K == 0:
+        return 0
+    own_dists = (own_final != reference_code).sum(axis=1).astype(float)
+    d_mean = float(own_dists.mean())
+    d_std = float(own_dists.std()) + 1.0
+    threshold_own = min(int(d_mean + 5.0 * d_std), K)
+
+    if other_holdout_final is not None and len(other_holdout_final) >= 10:
+        other_dists = (other_holdout_final != reference_code).sum(axis=1)
+        pct1 = int(np.percentile(other_dists, 1))
+        threshold_other = max(0, pct1 - 1)
+        return min(threshold_own, threshold_other)
+
+    return threshold_own
+
+
 def evaluate(
     own_codes: np.ndarray,    # (N_own, K) binary
     other_codes: np.ndarray,  # (N_other, K) binary
@@ -111,25 +138,46 @@ def evaluate(
 
 def make_layer_report(
     layer_num: int,
-    own_codes: np.ndarray,    # (N_own, K) binary — selected neurons only
-    other_codes: np.ndarray,  # (N_other, K) binary
-    n_total: int,             # neurons before stability filter
+    own_codes: np.ndarray,       # (N_own, K) binary — selected neurons only
+    other_codes: np.ndarray,     # (N_other, K) binary — training other
+    n_total: int,                # neurons before stability filter
     stability_own: np.ndarray,   # (K,)
     stability_other: np.ndarray, # (K,)
+    reference_code: np.ndarray | None = None,    # if None — computed from own_codes
+    other_codes_holdout: np.ndarray | None = None,  # holdout Other for unbiased FAR
 ) -> "LayerReport":  # type: ignore[name-defined]
-    """Build a LayerReport with both predicted and empirical FAR/FRR."""
+    """
+    Build a LayerReport with both predicted and empirical FAR/FRR.
+
+    Empirical FAR is computed on other_codes_holdout when provided — this avoids
+    the training bias where FAR=0 because the same Other data was used to fit weights.
+    """
     from .types import LayerReport
 
-    K = own_codes.shape[1]
-    threshold = optimal_hamming_threshold(stability_own)
+    K = own_codes.shape[1] if own_codes.ndim == 2 else 0
 
-    # Reference code = majority vote over Own
-    ref = (own_codes.mean(axis=0) >= 0.5).astype(np.int8)
+    # Use provided reference_code or derive from Own training majority vote
+    if reference_code is not None:
+        ref = reference_code
+    else:
+        ref = (own_codes.mean(axis=0) >= 0.5).astype(np.int8)
 
-    # Empirical FAR / FRR
-    own_dists   = (own_codes   != ref).sum(axis=1)
-    other_dists = (other_codes != ref).sum(axis=1)
-    emp_frr = float((own_dists   >  threshold).mean())
+    # Hamming threshold from own distribution
+    own_dists = (own_codes != ref).sum(axis=1).astype(float)
+    d_mean = float(own_dists.mean()) if K else 0.0
+    d_std = float(own_dists.std()) + 1.0
+    threshold = min(int(d_mean + 5.0 * d_std), K)
+
+    # Empirical FRR on training Own
+    emp_frr = float((own_dists > threshold).mean()) if K else 1.0
+
+    # Empirical FAR: prefer holdout Other (unbiased) over training Other (biased)
+    eval_other = (
+        other_codes_holdout
+        if other_codes_holdout is not None and len(other_codes_holdout) > 0
+        else other_codes
+    )
+    other_dists = (eval_other != ref).sum(axis=1)
     emp_far = float((other_dists <= threshold).mean())
 
     return LayerReport(

@@ -11,6 +11,7 @@ class TrainingSet:
     """Input data for NPBK training. own: (N≥11, D), other: (N≥64, D)."""
     own_vectors: np.ndarray
     other_vectors: np.ndarray
+    emotion: str | None = None  # when set, other must contain only this emotion
 
 
 @dataclass

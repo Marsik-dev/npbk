@@ -129,6 +129,36 @@ class NBKContainer:
             metadata=d.get("metadata", {}),
         )
 
+    def to_bytes(self, password: bytes | None = None) -> bytes:
+        """Serialize to bytes (for DB storage). Optionally encrypt."""
+        payload = msgpack.packb(self.to_dict(), use_bin_type=True)
+        if password is not None:
+            key = _derive_key(password)
+            nonce = os.urandom(12)
+            aesgcm = AESGCM(key)
+            ciphertext = aesgcm.encrypt(nonce, payload, None)
+            return b"NBK1ENC" + nonce + ciphertext
+        return b"NBK1RAW" + payload
+
+    @classmethod
+    def from_bytes(cls, data: bytes, password: bytes | None = None) -> "NBKContainer":
+        """Deserialize from bytes (from DB storage)."""
+        magic = data[:7]
+        body = data[7:]
+        if magic == b"NBK1ENC":
+            if password is None:
+                raise ValueError("Container is encrypted — provide password")
+            key = _derive_key(password)
+            nonce, ciphertext = body[:12], body[12:]
+            aesgcm = AESGCM(key)
+            payload = aesgcm.decrypt(nonce, ciphertext, None)
+        elif magic == b"NBK1RAW":
+            payload = body
+        else:
+            raise ValueError(f"Unknown container format magic: {magic!r}")
+        d = msgpack.unpackb(payload, raw=False)
+        return cls.from_dict(d)
+
     def save(self, path: str | Path, password: bytes | None = None) -> None:
         payload = msgpack.packb(self.to_dict(), use_bin_type=True)
         if password is not None:
